@@ -1,5 +1,5 @@
 [package]
-name = "microps-rust"
+name = "microps_rust"
 version = "0.1.0"
 edition = "2021"
 
