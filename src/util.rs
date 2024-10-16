@@ -90,3 +90,10 @@ macro_rules! debugf {
         util::lprintf('D', file!(), line!(), $function_name, format_args!($($arg)*))
     }};
 }
+
+#[macro_export]
+macro_rules! debugdump {
+    ($data:expr) => {
+        util::hexdump($data)
+    };
+}
