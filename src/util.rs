@@ -66,34 +66,34 @@ pub fn hexdump(data: &[u8]) -> io::Result<()> {
 #[macro_export]
 macro_rules! errorf {
     ($function_name:expr, $($arg:tt)*) => {{
-        lprintf('E', file!(), line!(), $function_name, format_args!($($arg)*))
+        util::lprintf('E', file!(), line!(), $function_name, format_args!($($arg)*)).map_err(|e| e.to_string())
     }};
 }
 
 #[macro_export]
 macro_rules! warnf {
     ($function_name:expr, $($arg:tt)*) => {{
-        lprintf('W', file!(), line!(), $function_name, format_args!($($arg)*))
+        util::lprintf('W', file!(), line!(), $function_name, format_args!($($arg)*)).map_err(|e| e.to_string())
     }};
 }
 
 #[macro_export]
 macro_rules! infof {
     ($function_name:expr, $($arg:tt)*) => {{
-        lprintf('I', file!(), line!(), $function_name, format_args!($($arg)*))
+        util::lprintf('I', file!(), line!(), $function_name, format_args!($($arg)*)).map_err(|e| e.to_string())
     }};
 }
 
 #[macro_export]
 macro_rules! debugf {
     ($function_name:expr, $($arg:tt)*) => {{
-        util::lprintf('D', file!(), line!(), $function_name, format_args!($($arg)*))
+        util::lprintf('D', file!(), line!(), $function_name, format_args!($($arg)*)).map_err(|e| e.to_string())
     }};
 }
 
 #[macro_export]
 macro_rules! debugdump {
     ($data:expr) => {
-        util::hexdump($data)
+        util::hexdump($data).map_err(|e| e.to_string())
     };
 }

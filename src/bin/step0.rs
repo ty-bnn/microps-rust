@@ -1,10 +1,9 @@
-use std::io;
 use microps_rust::util;
 
 #[macro_use]
 extern crate microps_rust;
 
-fn main() -> io::Result<()> {
+fn main() -> Result<(), String> {
     debugf!("main", "Hello {} !", "takayuki")?;
 
     let data: [u8; 48] = [
