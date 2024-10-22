@@ -2,9 +2,9 @@ use std::thread::sleep;
 use std::time::Duration;
 
 use microps_rust::driver::dummy::dummy_init;
-use microps_rust::net::{NetDevices, NetDeviceOps};
-use microps_rust::util;
+use microps_rust::net::{NetDeviceOps, NetDevices};
 use microps_rust::test::TEST_DATA;
+use microps_rust::util;
 
 #[macro_use]
 extern crate microps_rust;
@@ -18,7 +18,7 @@ fn main() -> Result<(), String> {
 
     if let Err(msg) = devices.net_run() {
         errorf!("main", "net_run() failure")?;
-        return Err(msg)
+        return Err(msg);
     }
 
     loop {

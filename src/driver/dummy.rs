@@ -1,7 +1,7 @@
-use std::cell::RefCell;
-use std::rc::Rc;
 use crate::net::{NetDeviceData, NetDeviceOps, NET_DEVICE_TYPE_DUMMY};
 use crate::util;
+use std::cell::RefCell;
+use std::rc::Rc;
 
 const DUMMY_MTU: u16 = u16::MAX;
 

@@ -1,10 +1,10 @@
-use std::cell::RefCell;
-use std::rc::Rc;
 use crate::debugdump;
 use crate::debugf;
 use crate::errorf;
 use crate::infof;
 use crate::util;
+use std::cell::RefCell;
+use std::rc::Rc;
 
 const NET_DEVICE_ADDR_LEN: usize = 16;
 const NET_DEVICE_FLAG_UP: u16 = 0x0001;
@@ -47,7 +47,12 @@ where
 
     pub fn net_device_register(&mut self, dev: Rc<RefCell<T>>) -> Result<(), String> {
         self.devices.push(dev.clone());
-        infof!("net_device_register", "registered, dev={}, type={}", dev.borrow().get_data().name, dev.borrow().get_data().device_type)?;
+        infof!(
+            "net_device_register",
+            "registered, dev={}, type={}",
+            dev.borrow().get_data().name,
+            dev.borrow().get_data().device_type
+        )?;
         Ok(())
     }
 
@@ -90,15 +95,15 @@ pub struct NetDeviceData {
 
 pub trait NetDeviceOps {
     fn open(&self) -> Result<(), String>;
-    
+
     fn close(&self) -> Result<(), String>;
-    
+
     fn transmit(&self, dev_type: u16, data: &[u8]) -> Result<(), String>;
-    
+
     fn get_data(&self) -> &NetDeviceData; /* this method is used to read NetDeviceData in Device */
-    
+
     fn get_data_mut(&mut self) -> &mut NetDeviceData; /* this method is used to change NetDeviceData in Device */
-    
+
     fn net_device_open(&mut self) -> Result<(), String> {
         let data = self.get_data();
         if NET_DEVICE_IS_UP!(data) {
@@ -108,7 +113,7 @@ pub trait NetDeviceOps {
 
         if let Err(msg) = self.open() {
             errorf!("net_device_open", "failure, dev={}", data.name)?;
-            return Err(msg)
+            return Err(msg);
         }
 
         let data = self.get_data_mut();
@@ -127,7 +132,7 @@ pub trait NetDeviceOps {
         let data = self.get_data();
         if !NET_DEVICE_IS_UP!(data) {
             errorf!("net_device_close", "not opened, dev={}", data.name)?;
-            return Err(String::new())
+            return Err(String::new());
         }
 
         if let Err(msg) = self.close() {
@@ -137,30 +142,52 @@ pub trait NetDeviceOps {
 
         let data = self.get_data_mut();
         data.flags &= !NET_DEVICE_FLAG_UP;
-        infof!("net_device_close", "dev={}, state={}", data.name, NET_DEVICE_STATE!(data))?;
+        infof!(
+            "net_device_close",
+            "dev={}, state={}",
+            data.name,
+            NET_DEVICE_STATE!(data)
+        )?;
 
         Ok(())
     }
-    
+
     fn net_device_output(&self, dev_type: u16, data: &[u8]) -> Result<(), String> {
         let dev_data = self.get_data();
         if !NET_DEVICE_IS_UP!(dev_data) {
             errorf!("net_device_output", "not opened, dev={}", dev_data.name)?;
-            return Err(String::new())
+            return Err(String::new());
         }
 
         // safe cast.
         if data.len() > u16::MAX as usize || data.len() as u16 > dev_data.mtu {
-            errorf!("net_device_output", "too long, dev={}, mtu={}, len={}", dev_data.name, dev_data.mtu, data.len())?;
+            errorf!(
+                "net_device_output",
+                "too long, dev={}, mtu={}, len={}",
+                dev_data.name,
+                dev_data.mtu,
+                data.len()
+            )?;
             return Err(String::new());
         }
 
-        debugf!("net_device_output", "dev={}, type={}, len={}", dev_data.name, dev_type, data.len())?;
+        debugf!(
+            "net_device_output",
+            "dev={}, type={}, len={}",
+            dev_data.name,
+            dev_type,
+            data.len()
+        )?;
         debugdump!(data)?;
 
         if let Err(msg) = self.transmit(dev_type, data) {
-            errorf!("net_device_output", "device transmit failure, dev={}, len={}", dev_data.name, data.len())?;
-            return Err(msg)
+            errorf!(
+                "net_device_output",
+                "device transmit failure, dev={}, len={}",
+                dev_data.name,
+                data.len()
+            )?;
+            return Err(msg);
         }
 
         Ok(())
