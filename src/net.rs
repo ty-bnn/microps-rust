@@ -3,8 +3,6 @@ use crate::debugf;
 use crate::errorf;
 use crate::infof;
 use crate::util;
-use std::cell::RefCell;
-use std::rc::Rc;
 
 const NET_DEVICE_ADDR_LEN: usize = 16;
 const NET_DEVICE_FLAG_UP: u16 = 0x0001;
@@ -27,60 +25,79 @@ macro_rules! NET_DEVICE_STATE {
     };
 }
 
-pub struct NetDevices<T: NetDeviceOps> {
-    pub devices: Vec<Rc<RefCell<T>>>,
+pub struct NetDeviceList {
+    pub head: Option<Box<NetDevice>>,
 }
 
-impl<T> NetDevices<T>
-where
-    T: NetDeviceOps,
-{
+impl NetDeviceList {
     pub fn new() -> Self {
-        Self {
-            devices: Vec::new(),
-        }
+        NetDeviceList { head: None }
     }
 
     pub fn net_init(&self) -> Result<(), String> {
         infof!("net_init", "initialized")
     }
 
-    pub fn net_device_register(&mut self, dev: Rc<RefCell<T>>) -> Result<(), String> {
-        self.devices.push(dev.clone());
+    pub fn net_device_register(&mut self, mut dev: Box<NetDevice>) -> Result<(), String> {
+        let name = dev.name.clone();
+        let device_type = dev.device_type;
+
+        dev.next = self.head.take();
+        self.head = Some(dev);
+
         infof!(
             "net_device_register",
             "registered, dev={}, type={}",
-            dev.borrow().get_data().name,
-            dev.borrow().get_data().device_type
+            name,
+            device_type
         )?;
+
         Ok(())
     }
 
-    pub fn net_run(&self) -> Result<(), String> {
+    pub fn net_run(&mut self) -> Result<(), String> {
         debugf!("net_run", "open all devices...")?;
 
-        for dev in &self.devices {
-            dev.borrow_mut().net_device_open()?;
+        let mut current = self.head.as_mut();
+        while let Some(node) = current {
+            node.net_device_open()?;
+            current = node.next.as_mut();
         }
 
         debugf!("net_run", "running...")?;
         Ok(())
     }
 
-    pub fn net_shutdown(&self) -> Result<(), String> {
+    pub fn net_shutdown(&mut self) -> Result<(), String> {
         debugf!("net_shutdown", "close all devices...")?;
 
-        for dev in &self.devices {
-            dev.borrow_mut().net_device_close()?;
+        let mut current = self.head.as_mut();
+        while let Some(node) = current {
+            node.net_device_close()?;
+            current = node.next.as_mut();
         }
 
         debugf!("net_shutdown", "shutting down")?;
         Ok(())
     }
+
+    pub fn net_device_output(&self, name: &str, dev_type: u16, data: &[u8]) -> Result<(), String> {
+        let mut current = self.head.as_ref();
+        while let Some(dev) = current {
+            if dev.name == name {
+                dev.net_device_output(dev_type, data)?;
+                break;
+            }
+            current = dev.next.as_ref();
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Default)]
-pub struct NetDeviceData {
+pub struct NetDevice {
+    pub next: Option<Box<NetDevice>>,
     pub index: u32,
     pub name: String,
     pub device_type: u16,
@@ -91,81 +108,73 @@ pub struct NetDeviceData {
     pub addr: [u8; NET_DEVICE_ADDR_LEN],
     pub peer: [u8; NET_DEVICE_ADDR_LEN],
     pub broadcast: [u8; NET_DEVICE_ADDR_LEN],
+    pub open: Option<fn() -> Result<(), String>>,
+    pub close: Option<fn() -> Result<(), String>>,
+    pub transmit: Option<fn(&NetDevice, u16, &[u8]) -> Result<(), String>>,
 }
 
-pub trait NetDeviceOps {
-    fn open(&self) -> Result<(), String>;
-
-    fn close(&self) -> Result<(), String>;
-
-    fn transmit(&self, dev_type: u16, data: &[u8]) -> Result<(), String>;
-
-    fn get_data(&self) -> &NetDeviceData; /* this method is used to read NetDeviceData in Device */
-
-    fn get_data_mut(&mut self) -> &mut NetDeviceData; /* this method is used to change NetDeviceData in Device */
-
-    fn net_device_open(&mut self) -> Result<(), String> {
-        let data = self.get_data();
-        if NET_DEVICE_IS_UP!(data) {
-            errorf!("net_device_open", "already opened, dev={}", data.name)?;
+impl NetDevice {
+    pub fn net_device_open(&mut self) -> Result<(), String> {
+        if NET_DEVICE_IS_UP!(self) {
+            errorf!("net_device_open", "already opened, dev={}", self.name)?;
             return Err(String::new());
         }
 
-        if let Err(msg) = self.open() {
-            errorf!("net_device_open", "failure, dev={}", data.name)?;
-            return Err(msg);
+        if let Some(open) = self.open {
+            if let Err(msg) = open() {
+                errorf!("net_device_open", "failure, dev={}", self.name)?;
+                return Err(msg);
+            }
         }
 
-        let data = self.get_data_mut();
-        data.flags |= NET_DEVICE_FLAG_UP;
+        self.flags |= NET_DEVICE_FLAG_UP;
         infof!(
             "net_device_open",
             "dev={}, state={}",
-            data.name,
-            NET_DEVICE_STATE!(data)
+            self.name,
+            NET_DEVICE_STATE!(self)
         )?;
 
         Ok(())
     }
 
-    fn net_device_close(&mut self) -> Result<(), String> {
-        let data = self.get_data();
-        if !NET_DEVICE_IS_UP!(data) {
-            errorf!("net_device_close", "not opened, dev={}", data.name)?;
+    pub fn net_device_close(&mut self) -> Result<(), String> {
+        if !NET_DEVICE_IS_UP!(self) {
+            errorf!("net_device_close", "not opened, dev={}", self.name)?;
             return Err(String::new());
         }
 
-        if let Err(msg) = self.close() {
-            errorf!("net_device_close", "failure, dev={}", data.name)?;
-            return Err(msg);
+        if let Some(close) = self.close {
+            if let Err(msg) = close() {
+                errorf!("net_device_close", "failure, dev={}", self.name)?;
+                return Err(msg);
+            }
         }
 
-        let data = self.get_data_mut();
-        data.flags &= !NET_DEVICE_FLAG_UP;
+        self.flags &= !NET_DEVICE_FLAG_UP;
         infof!(
             "net_device_close",
             "dev={}, state={}",
-            data.name,
-            NET_DEVICE_STATE!(data)
+            self.name,
+            NET_DEVICE_STATE!(self)
         )?;
 
         Ok(())
     }
 
-    fn net_device_output(&self, dev_type: u16, data: &[u8]) -> Result<(), String> {
-        let dev_data = self.get_data();
-        if !NET_DEVICE_IS_UP!(dev_data) {
-            errorf!("net_device_output", "not opened, dev={}", dev_data.name)?;
+    pub fn net_device_output(&self, dev_type: u16, data: &[u8]) -> Result<(), String> {
+        if !NET_DEVICE_IS_UP!(self) {
+            errorf!("net_device_output", "not opened, dev={}", self.name)?;
             return Err(String::new());
         }
 
         // safe cast.
-        if data.len() > u16::MAX as usize || data.len() as u16 > dev_data.mtu {
+        if data.len() > u16::MAX as usize || data.len() as u16 > self.mtu {
             errorf!(
                 "net_device_output",
                 "too long, dev={}, mtu={}, len={}",
-                dev_data.name,
-                dev_data.mtu,
+                self.name,
+                self.mtu,
                 data.len()
             )?;
             return Err(String::new());
@@ -174,20 +183,22 @@ pub trait NetDeviceOps {
         debugf!(
             "net_device_output",
             "dev={}, type={}, len={}",
-            dev_data.name,
+            self.name,
             dev_type,
             data.len()
         )?;
         debugdump!(data)?;
 
-        if let Err(msg) = self.transmit(dev_type, data) {
-            errorf!(
-                "net_device_output",
-                "device transmit failure, dev={}, len={}",
-                dev_data.name,
-                data.len()
-            )?;
-            return Err(msg);
+        if let Some(transmit) = self.transmit {
+            if let Err(msg) = transmit(self, dev_type, data) {
+                errorf!(
+                    "net_device_output",
+                    "device transmit failure, dev={}, len={}",
+                    self.name,
+                    data.len()
+                )?;
+                return Err(msg);
+            }
         }
 
         Ok(())
