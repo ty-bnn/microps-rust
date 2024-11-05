@@ -19,10 +19,9 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     flag::register(SIGINT, Arc::clone(&term))?;
 
-    let mut devices = NetDeviceList::new();
-    devices.net_init()?;
+    let mut devices = NetDeviceList::net_init()?;
 
-    let dev = dummy_init();
+    let dev = dummy_init(&mut devices.irq_entry_list)?;
     devices.net_device_register(dev)?;
 
     if let Err(msg) = devices.net_run() {

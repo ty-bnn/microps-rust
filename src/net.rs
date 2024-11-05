@@ -2,7 +2,11 @@ use crate::debugdump;
 use crate::debugf;
 use crate::errorf;
 use crate::infof;
+use crate::platform::linux::intr::IrqEntryList;
 use crate::util;
+use std::error::Error;
+use std::sync::Arc;
+use std::sync::Mutex;
 
 const NET_DEVICE_ADDR_LEN: usize = 16;
 const NET_DEVICE_FLAG_UP: u16 = 0x0001;
@@ -26,42 +30,47 @@ macro_rules! NET_DEVICE_STATE {
 }
 
 pub struct NetDeviceList {
-    pub head: Option<Box<NetDevice>>,
+    pub head: Option<Arc<Mutex<NetDevice>>>,
+    pub irq_entry_list: IrqEntryList,
 }
 
 impl NetDeviceList {
-    pub fn new() -> Self {
-        NetDeviceList { head: None }
+    pub fn net_init() -> Result<NetDeviceList, Box<dyn Error>> {
+        infof!("net_init", "initialized")?;
+
+        let irq_entry_list = IrqEntryList::intr_init()?;
+
+        Ok(NetDeviceList {
+            head: None,
+            irq_entry_list,
+        })
     }
 
-    pub fn net_init(&self) -> Result<(), String> {
-        infof!("net_init", "initialized")
-    }
-
-    pub fn net_device_register(&mut self, mut dev: Box<NetDevice>) -> Result<(), String> {
-        let name = dev.name.clone();
-        let device_type = dev.device_type;
-
-        dev.next = self.head.take();
-        self.head = Some(dev);
+    pub fn net_device_register(&mut self, dev: Arc<Mutex<NetDevice>>) -> Result<(), String> {
+        let mut d = dev.lock().unwrap();
+        d.next = self.head.take();
+        self.head = Some(dev.clone());
 
         infof!(
             "net_device_register",
             "registered, dev={}, type={}",
-            name,
-            device_type
+            d.name,
+            d.device_type,
         )?;
 
         Ok(())
     }
 
-    pub fn net_run(&mut self) -> Result<(), String> {
+    pub fn net_run(&mut self) -> Result<(), Box<dyn Error>> {
         debugf!("net_run", "open all devices...")?;
 
-        let mut current = self.head.as_mut();
+        self.irq_entry_list.intr_run()?;
+
+        let mut current = self.head.clone();
         while let Some(node) = current {
-            node.net_device_open()?;
-            current = node.next.as_mut();
+            let mut n = node.lock().unwrap();
+            n.net_device_open()?;
+            current = n.next.clone();
         }
 
         debugf!("net_run", "running...")?;
@@ -71,10 +80,11 @@ impl NetDeviceList {
     pub fn net_shutdown(&mut self) -> Result<(), String> {
         debugf!("net_shutdown", "close all devices...")?;
 
-        let mut current = self.head.as_mut();
+        let mut current = self.head.clone();
         while let Some(node) = current {
-            node.net_device_close()?;
-            current = node.next.as_mut();
+            let mut n = node.lock().unwrap();
+            n.net_device_close()?;
+            current = n.next.clone();
         }
 
         debugf!("net_shutdown", "shutting down")?;
@@ -82,13 +92,14 @@ impl NetDeviceList {
     }
 
     pub fn net_device_output(&self, name: &str, dev_type: u16, data: &[u8]) -> Result<(), String> {
-        let mut current = self.head.as_ref();
-        while let Some(dev) = current {
-            if dev.name == name {
-                dev.net_device_output(dev_type, data)?;
+        let mut current = self.head.clone();
+        while let Some(node) = current {
+            let n = node.lock().unwrap();
+            if n.name == name {
+                n.net_device_output(dev_type, data)?;
                 break;
             }
-            current = dev.next.as_ref();
+            current = n.next.clone();
         }
 
         Ok(())
@@ -97,7 +108,7 @@ impl NetDeviceList {
 
 #[derive(Default)]
 pub struct NetDevice {
-    pub next: Option<Box<NetDevice>>,
+    pub next: Option<Arc<Mutex<NetDevice>>>,
     pub index: u32,
     pub name: String,
     pub device_type: u16,
