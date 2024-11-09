@@ -1,9 +1,11 @@
+use std::error::Error;
+
 use microps_rust::util;
 
 #[macro_use]
 extern crate microps_rust;
 
-fn main() -> Result<(), String> {
+fn main() -> Result<(), Box<dyn Error>> {
     debugf!("main", "Hello {} !", "takayuki")?;
 
     let data: [u8; 48] = [

@@ -46,7 +46,7 @@ impl NetDeviceList {
         })
     }
 
-    pub fn net_device_register(&mut self, dev: Arc<Mutex<NetDevice>>) -> Result<(), String> {
+    pub fn net_device_register(&mut self, dev: Arc<Mutex<NetDevice>>) -> Result<(), Box<dyn Error>> {
         let mut d = dev.lock().unwrap();
         d.next = self.head.take();
         self.head = Some(dev.clone());
@@ -77,7 +77,7 @@ impl NetDeviceList {
         Ok(())
     }
 
-    pub fn net_shutdown(&mut self) -> Result<(), String> {
+    pub fn net_shutdown(&mut self) -> Result<(), Box<dyn Error>> {
         debugf!("net_shutdown", "close all devices...")?;
 
         let mut current = self.head.clone();
@@ -91,7 +91,7 @@ impl NetDeviceList {
         Ok(())
     }
 
-    pub fn net_device_output(&self, name: &str, dev_type: u16, data: &[u8]) -> Result<(), String> {
+    pub fn net_device_output(&self, name: &str, dev_type: u16, data: &[u8]) -> Result<(), Box<dyn Error>> {
         let mut current = self.head.clone();
         while let Some(node) = current {
             let n = node.lock().unwrap();
@@ -121,20 +121,20 @@ pub struct NetDevice {
     pub broadcast: [u8; NET_DEVICE_ADDR_LEN],
     pub open: Option<fn() -> Result<(), String>>,
     pub close: Option<fn() -> Result<(), String>>,
-    pub transmit: Option<fn(&NetDevice, u16, &[u8]) -> Result<(), String>>,
+    pub transmit: Option<fn(&NetDevice, u16, &[u8]) -> Result<(), Box<dyn Error>>>,
 }
 
 impl NetDevice {
-    pub fn net_device_open(&mut self) -> Result<(), String> {
+    pub fn net_device_open(&mut self) -> Result<(), Box<dyn Error>> {
         if NET_DEVICE_IS_UP!(self) {
             errorf!("net_device_open", "already opened, dev={}", self.name)?;
-            return Err(String::new());
+            return Err("net device already opened".into());
         }
 
         if let Some(open) = self.open {
             if let Err(msg) = open() {
                 errorf!("net_device_open", "failure, dev={}", self.name)?;
-                return Err(msg);
+                return Err(msg.into());
             }
         }
 
@@ -149,16 +149,16 @@ impl NetDevice {
         Ok(())
     }
 
-    pub fn net_device_close(&mut self) -> Result<(), String> {
+    pub fn net_device_close(&mut self) -> Result<(), Box<dyn Error>> {
         if !NET_DEVICE_IS_UP!(self) {
             errorf!("net_device_close", "not opened, dev={}", self.name)?;
-            return Err(String::new());
+            return Err("net device not opend".into());
         }
 
         if let Some(close) = self.close {
             if let Err(msg) = close() {
                 errorf!("net_device_close", "failure, dev={}", self.name)?;
-                return Err(msg);
+                return Err(msg.into());
             }
         }
 
@@ -173,10 +173,10 @@ impl NetDevice {
         Ok(())
     }
 
-    pub fn net_device_output(&self, dev_type: u16, data: &[u8]) -> Result<(), String> {
+    pub fn net_device_output(&self, dev_type: u16, data: &[u8]) -> Result<(), Box<dyn Error>> {
         if !NET_DEVICE_IS_UP!(self) {
             errorf!("net_device_output", "not opened, dev={}", self.name)?;
-            return Err(String::new());
+            return Err("net device not opened".into());
         }
 
         // safe cast.
@@ -188,7 +188,7 @@ impl NetDevice {
                 self.mtu,
                 data.len()
             )?;
-            return Err(String::new());
+            return Err("net device output too long".into());
         }
 
         debugf!(

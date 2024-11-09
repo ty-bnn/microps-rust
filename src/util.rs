@@ -1,5 +1,6 @@
 use chrono::Local;
 use fs2::FileExt;
+use std::error::Error;
 use std::fmt;
 use std::fs::File;
 use std::io::{self, Write};
@@ -10,7 +11,7 @@ pub fn lprintf(
     line: u32,
     func: &str,
     args: fmt::Arguments,
-) -> io::Result<()> {
+) -> Result<(), Box<dyn Error>> {
     writeln!(
         &mut io::stderr().lock(),
         "{} [{}] {}: {} ({}, {})",
@@ -20,10 +21,11 @@ pub fn lprintf(
         args,
         file,
         line
-    )
+    )?;
+    Ok(())
 }
 
-pub fn hexdump(data: &[u8]) -> io::Result<()> {
+pub fn hexdump(data: &[u8]) -> Result<(), Box<dyn Error>> {
     let mut stderr = File::create("/dev/stderr")?;
     stderr.lock_exclusive()?;
 

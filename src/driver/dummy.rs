@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 const DUMMY_MTU: u16 = u16::MAX;
 pub const DUMMY_DEV_NAME: &str = "dummy";
 
-fn dummy_transimt(dev: &NetDevice, dev_type: u16, data: &[u8]) -> Result<(), String> {
+fn dummy_transimt(dev: &NetDevice, dev_type: u16, data: &[u8]) -> Result<(), Box<dyn Error>> {
     debugf!(
         "dummy_transmit",
         "dev={}, type=0x{:04x}, len={}",
